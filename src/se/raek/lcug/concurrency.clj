@@ -2,20 +2,30 @@
   (:use [clojure.contrib.import-static :only (import-static)])
   (:import java.util.concurrent.Future))
 
-;;; Time related functions (here be redundancy)
+;;; Time related functions
 
 (import-static java.util.concurrent.TimeUnit
                DAYS HOURS MINUTES SECONDS
                MILLISECONDS MICROSECONDS NANOSECONDS)
 
-(defn- lookup-time-unit [time-unit]
-  (get {:days DAYS, :hours HOURS, :minutes MINUTES, :seconds SECONDS,
-        :milliseconds MILLISECONDS, :microseconds MICROSECONDS,
-        :nanoseconds NANOSECONDS}
+(defn- lookup-time-unit
+  "Takes a java.util.concurrent.TimeUnit value or a keyword with the
+  corresponding lowercase name and returns a TimeUnit value."
+  [time-unit]
+  (get {:days         DAYS
+        :hours        HOURS
+        :minutes      MINUTES
+        :seconds      SECONDS,
+        :milliseconds MILLISECONDS
+        :microseconds MICROSECONDS
+        :nanoseconds  NANOSECONDS}
        time-unit
        time-unit))
 
-(defn- millis-and-nanos [time time-unit]
+(defn- millis-and-nanos
+  "Takes a time and a java.util.concurrent.TimeUnit and returns a
+  vector of the time split into milliseconds and nanoseconds."
+  [time time-unit]
   (condp = time-unit
       DAYS         [(* 24 60 60 1000 time) 0]
       HOURS        [(* 60 60 1000 time) 0]
@@ -32,66 +42,94 @@
               (str "Illegal time unit: " time-unit)))))
 
 (defn sleep
-  ([timeout-ms]
-     (when-not (neg? timeout-ms)
-       (Thread/sleep timeout-ms)))
-  ([timeout time-unit]
-     (let [time-unit (lookup-time-unit time-unit)
-           [millis nanos] (millis-and-nanos timeout time-unit)]
-       (cond (or (neg? millis)
-                 (neg? nanos))
-             nil
-             (zero? nanos)
-             (Thread/sleep millis)
-             :else
-             (Thread/sleep millis nanos)))))
+  "Makes the current thread sleep for the given amount of time. Unlike
+  its underlying method, this function returns immediately when time
+  is negative. Throws an InterruptedException and clears the
+  interrupted status if the thread is interrupted by another thread
+  while sleeping.
 
-;;; Wrapper functions for the monitor methods of Object (here be redundancy)
+  See Also:
+    java.lang.Thread.sleep"
+  [time time-unit]
+  (let [time-unit (lookup-time-unit time-unit)
+        [millis nanos] (millis-and-nanos time time-unit)]
+    (cond (or (neg? millis)
+              (neg? nanos))
+          nil
+          (zero? nanos)
+          (Thread/sleep millis)
+          :else
+          (Thread/sleep millis nanos))))
+
+;;; Wrapper functions for the monitor methods of Object
 ;;
 ;; Useful resource:
 ;;   Using wait(), notify() and notifyAll() in Java: common problems and mistakes
 ;;   http://www.javamex.com/tutorials/synchronization_wait_notify_3.shtml
 
 (defn wait
+  "Makes the current thread wait until another thread invokes notify
+  on the given object. Unlike its underlying method, this function
+  returns immediately when timeout is negative or zero. Throws an
+  InterruptedException and clears the interrupted status if the thread
+  is interrupted by another thread while waiting. Throws an
+  IllegalMonitorStateException if the current thread is not in the
+  monitor of o (e.g. with clojure.core/locking).
+
+  See Also:
+    clojure.core/locking
+    java.lang.Object.wait"
   ([^Object o]
      (.wait o))
-  ([^Object o timeout-ms]
-     (.wait o timeout-ms))
   ([^Object o timeout time-unit]
      (let [time-unit (lookup-time-unit time-unit)
            [millis nanos] (millis-and-nanos timeout)]
-       (cond (or (neg? millis)
-                 (neg? nanos)
-                 (and (zero? millis)
-                      (zero? nanos)))
-             nil
-             (zero? nanos)
-             (.wait o millis)
-             :else
-             (.wait o millis nanos)))))
+       (cond (or (and (zero? millis) (zero? nanos))
+                 (neg? millis) (neg? nanos))
+             nil,
+             (zero? nanos) (.wait o millis),
+             :else (.wait o millis nanos)))))
 
 (defn notify
+  "Wakes up one thread that is waiting on the monitor of object
+  o. Throws an IllegalMonitorStateException if the current thread is
+  not in the monitor of o (e.g. with clojure.core/locking).
+
+  See Also:
+    clojure.core/locking
+    java.lang.Object.notify"
   [^Object o]
   (.notify o))
 
 (defn notify-all
+  "Wakes up all threads that are waiting on the monitor of object
+  o. Throws an IllegalMonitorStateException if the current thread is
+  not in the monitor of o (e.g. with clojure.core/locking).
+
+  See Also:
+    clojure.core/locking
+    java.lang.Object.notifyAll"
   [^Object o]
   (.notifyAll o))
 
 ;;; Supplementary future functions
 
 (defn future-get
+  "Blocks until the computation of the future is finished (like
+  deref/@), or until a timeout occurs (if given).
+
+  See Also:
+    clojure.core/deref
+    java.util.concurrent.Future.get"
   ([^Future f]
      (.get f))
-  ([^Future f timeout-ms]
-     (.get f timeout-ms MILLISECONDS))
   ([^Future f timeout time-unit]
      (.get f timeout (lookup-time-unit time-unit))))
 
 ;;; Thread analogies of the future functions
 
 (defn thread?
-  "Returns true if x is a thread"
+  "Returns true if x is a thread."
   [x]
   (instance? Thread x))
 
@@ -107,3 +145,79 @@
   invoke the body in another thread."
   [& body]
   `(thread-call (fn [] ~@body)))
+
+;;; Convenience wrappers for threads
+
+(defn current-thread
+  "Returns the thread object of the thread that invokes this
+  function.
+
+  See Also:
+    java.lang.Thread.currentThread"
+  []
+  (Thread/currentThread))
+
+(defn join
+  "Waits for the thread to terminate. Unlike its underlying method,
+  this function returns immediately when timeout is negative or
+  zero. Throws an InterruptedException and clears the interrupted
+  status if the thread is interrupted by another thread while waiting.
+
+  See Also:
+    java.lang.Thread.join"
+  ([^Thread t]
+     (.join t))
+  ([^Thread t timeout time-unit]
+     (let [time-unit (lookup-time-unit time-unit)
+           [millis nanos] (millis-and-nanos timeout)]
+       (cond (or (and (zero? millis) (zero? nanos))
+                 (neg? millis) (neg? nanos))
+             nil,
+             (zero? nanos) (.join t millis),
+             :else (.join t millis nanos)))))
+
+;;; Thread interruption
+
+(defn interrupted?
+  "Returns the interrupted status of thread t.
+
+  See Also:
+    java.lang.Thread.isInterrupted"
+  [^Thread t]
+  (.isInterrupted t))
+
+(defn interrupt
+  "Interrupts thread t.
+
+  If the thread is blocking in a invokation of
+  Object.wait, Thread.join or Thread.sleep the interrupted status of
+  the thread will be cleared and an InterruptedException will be
+  thrown from that call.
+
+  If the thread is blocking in an I/O operation on a interrubtible
+  channel, the channel will be closed, the interrupted status of the
+  thread set and an ClosedByInterruptException will be thrown from
+  that call.
+
+  If the thread is blocking in a selector, the interrupted status of
+  the thread will be set and then the thread will return immediately
+  from that call.
+
+  Otherwise, the only effect of this function is that interrupted
+  status of the thread will be set, which the thread will have to
+  check itself.
+
+  See Also:
+    java.lang.Thread.interrup"
+  [^Thread t]
+  (.interrupt t))
+
+(defn clear-interrupted-status
+  "Clears the interrupted status of the current thread (the thread
+  where this function is invoked) and returns the interrupted status
+  is had before.
+
+  See Also:
+    java.lang.Thread.interrupted"
+  []
+  (Thread/interrupted))
