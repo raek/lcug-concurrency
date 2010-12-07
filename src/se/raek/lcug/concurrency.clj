@@ -1,6 +1,7 @@
 (ns se.raek.lcug.concurrency
   (:use [clojure.contrib.import-static :only (import-static)])
-  (:import java.util.concurrent.Future))
+  (:import (java.util.concurrent Future Executor ExecutorService
+                                 Executors)))
 
 ;;; Time related functions
 
@@ -83,7 +84,7 @@
      (.wait o))
   ([^Object o timeout time-unit]
      (let [time-unit (lookup-time-unit time-unit)
-           [millis nanos] (millis-and-nanos timeout)]
+           [millis nanos] (millis-and-nanos timeout time-unit)]
        (cond (or (and (zero? millis) (zero? nanos))
                  (neg? millis) (neg? nanos))
              nil,
@@ -113,6 +114,17 @@
   (.notifyAll o))
 
 ;;; Supplementary future functions
+;;
+;; See Also:
+;;   clojure.core/future
+;;   clojure.core/future-call
+;;   clojure.core/future-cancel
+;;   clojure.core/future-cancelled?
+;;   clojure.core/future-done?
+;;   java.util.concurrent.Future.cancel
+;;   java.util.concurrent.Future.get
+;;   java.util.concurrent.Future.isCancelled
+;;   java.util.concurrent.Future.isDone
 
 (defn future-get
   "Blocks until the computation of the future is finished (like
@@ -221,3 +233,75 @@
     java.lang.Thread.interrupted"
   []
   (Thread/interrupted))
+
+;;; Runnables
+
+(defn run
+  [^Runnable f]
+  (.run f))
+
+;;; Callables
+
+(defn call
+  [^Callable f]
+  (.call f))
+
+;;; Executors
+
+(defn execute
+  [^Executor exe ^Runnable f]
+  (.execute exe f))
+
+;; Executor Services
+
+(defn await-termination
+  [^ExecutorService exe timeout time-unit]
+  (.awaitTermination exe timeout (lookup-time-unit time-unit)))
+
+(defn invoke-all
+  ([^ExecutorService exe fs]
+     (.invokeAll exe fs))
+  ([^ExecutorService exe fs timeout time-unit]
+     (.invokeAll exe fs timeout (lookup-time-unit time-unit))))
+
+(defn invoke-any
+  ([^ExecutorService exe fs]
+     (.invokeAny exe fs))
+  ([^ExecutorService exe fs timeout time-unit]
+     (.invokeAny exe fs timeout (lookup-time-unit time-unit))))
+
+(defn shutdown?
+  [^ExecutorService exe]
+  (.isShutdown exe))
+
+(defn terminated?
+  [^ExecutorService exe]
+  (.isShutdown exe))
+
+(defn shutdown
+  [^ExecutorService exe]
+  (.shutdown exe))
+
+(defn shutdown-now
+  [^ExecutorService exe]
+  (.shutdownNow exe))
+
+(defn submit
+  ([^ExecutorService exe ^Runnable f]
+     (.submit exe f))
+  ([^ExecutorService exe ^Runnable f result]
+     (.submit exe f result)))
+
+;;; Executor Service Constructors
+
+(defn create-cached-thread-pool
+  []
+  (Executors/newCachedThreadPool))
+
+(defn create-fixed-thread-pool
+  [n]
+  (Executors/newFixedThreadPool n))
+
+(defn create-single-thread-executor
+  [n]
+  (Executors/newSingleThreadExecutor))
