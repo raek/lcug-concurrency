@@ -1,4 +1,5 @@
 (ns se.raek.lcug.concurrency
+  (:refer-clojure :exclude (future-cancel))
   (:use [clojure.contrib.import-static :only (import-static)])
   (:import (java.util.concurrent Future Executor ExecutorService
                                  Executors)))
@@ -125,6 +126,12 @@
 ;;   java.util.concurrent.Future.get
 ;;   java.util.concurrent.Future.isCancelled
 ;;   java.util.concurrent.Future.isDone
+
+(defn future-cancel
+  ([^Future f]
+     (.cancel f true))
+  ([^Future f may-interrupt-if-running]
+     (.cancel f may-interrupt-if-running)))
 
 (defn future-get
   "Blocks until the computation of the future is finished (like
